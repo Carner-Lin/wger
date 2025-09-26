@@ -43,19 +43,50 @@ from wger.weight.models import WeightEntry
 from .language import Language
 
 
-def birthdate_validator(birthdate):
-    """
-    Checks to see if entered birthdate (datetime.date object) is
-    between 10 and 100 years of age.
-    """
-    max_year = birthdate.replace(year=(birthdate.year + 100))
-    min_year = birthdate.replace(year=(birthdate.year + 10))
+def birthdate_validator(value):
+    if value is None:
+        return
+
     today = datetime.date.today()
-    if today > max_year or today < min_year:
-        raise ValidationError(
-            _('%(birthdate)s is not a valid birthdate'),
-            params={'birthdate': birthdate},
-        )
+
+    if value > today:
+        raise ValidationError(_('Birth date cannot be in the future.'))
+
+    cfg = getattr(settings, 'WGER_SETTINGS', {}) or {}
+
+    try:
+        min_age = int(cfg.get('PROFILE_MIN_AGE_YEARS', 0) or 0)
+    except Exception:
+        min_age = 0
+
+    try:
+        raw = cfg.get('PROFILE_MAX_AGE_YEARS', -1)
+        max_age = int(raw if raw is not None else -1)
+    except Exception:
+        max_age = -1
+
+    # Helper to handle Feb 29
+    def years_ago(base, years):
+        try:
+            return base.replace(year=base.year - years)
+        except ValueError:
+            return base.replace(month=2, day=28, year=base.year - years)
+
+    if min_age != -1:
+        youngest = years_ago(today, min_age)
+        if value > youngest:
+            raise ValidationError(
+                _('You must be at least %(age)s years old.'),
+                params={'age': min_age},
+            )
+
+    if max_age != -1:
+        oldest = years_ago(today, max_age)
+        if value < oldest:
+            raise ValidationError(
+                _('You must be at most %(age)s years old.'),
+                params={'age': max_age},
+            )
 
 
 class UserProfile(models.Model):
