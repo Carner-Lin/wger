@@ -34,6 +34,7 @@ from django.forms import (
     widgets,
 )
 from django.utils.translation import gettext as _
+from django.conf import settings as dj_settings
 
 # Third Party
 from crispy_forms.helper import FormHelper
@@ -116,11 +117,7 @@ class UserPreferencesForm(forms.ModelForm):
         label=_('Date of Birth'),
         required=False,
         widget=forms.DateInput(
-            attrs={
-                'type': 'date',
-                'max': str(date.today().replace(year=date.today().year - 10)),
-                'min': str(date.today().replace(year=date.today().year - 100)),
-            },
+            attrs={'type': 'date'},
         ),
     )
 
@@ -142,6 +139,27 @@ class UserPreferencesForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super(UserPreferencesForm, self).__init__(*args, **kwargs)
+
+        cfg = getattr(dj_settings, 'WGER_SETTINGS', {})
+        today = date.today()
+        try:
+            min_age = int(cfg.get('PROFILE_MIN_AGE_YEARS', 0) or 0)
+        except Exception:
+            min_age = 0
+        try:
+            max_age = int(cfg.get('PROFILE_MAX_AGE_YEARS', -1) if cfg.get('PROFILE_MAX_AGE_YEARS', -1) is not None else -1)
+        except Exception:
+            max_age = -1
+        attrs = self.fields['birthdate'].widget.attrs
+
+        if min_age == -1:
+            attrs['max'] = str(today)
+        else:
+            attrs['max'] = str(today.replace(year=today.year - min_age))
+        if max_age != -1:
+            attrs['min'] = str(today.replace(year=today.year - max_age))
+        else:
+            attrs.pop('min', None)
 
         hattrs = self.fields['height'].widget.attrs
         hattrs.setdefault('type', 'number')
@@ -182,6 +200,13 @@ class UserPreferencesForm(forms.ModelForm):
             ButtonHolder(Submit('submit', _('Save'), css_class='btn-success btn-block')),
         )
 
+    def clean_birthdate(self):
+        bd = self.cleaned_data.get('birthdate')
+        if not bd:
+          return bd
+        from wger.core.models.profile import birthdate_validator
+        birthdate_validator(bd)
+        return bd
 
 class UserEmailForm(forms.ModelForm):
     email = EmailField(
